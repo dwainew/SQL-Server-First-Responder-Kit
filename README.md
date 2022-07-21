@@ -4,6 +4,7 @@
 [![stars badge]][stars]
 [![forks badge]][forks]
 [![issues badge]][issues]
+[![contributors_badge]][contributors]
 
 Navigation
  - [How to Install the Scripts](#how-to-install-the-scripts)
@@ -22,7 +23,8 @@ Navigation
    - [sp_BlitzInMemoryOLTP: Hekaton Analysis](#sp_blitzinmemoryoltp-hekaton-analysis) 
    - [sp_BlitzLock: Deadlock Analysis](#sp_blitzlock-deadlock-analysis) 
    - [sp_BlitzQueryStore: Like BlitzCache, for Query Store](#sp_blitzquerystore-query-store-sale)
-   - [sp_BlitzWho: What Queries are Running Now](#sp_blitzwho-what-queries-are-running-now)
+   - [sp_BlitzWho: What Queries are Running Now](#sp_blitzwho-what-queries-are-running-now)   
+   - [sp_BlitzAnalysis: Query sp_BlitzFirst output tables](#sp_blitzanalysis-query-sp_BlitzFirst-output-tables) 
  - Backups and Restores:
    - [sp_BlitzBackups: How Much Data Could You Lose](#sp_blitzbackups-how-much-data-could-you-lose)  
    - [sp_AllNightLog: Back Up Faster to Lose Less Data](#sp_allnightlog-back-up-faster-to-lose-less-data)  
@@ -43,7 +45,7 @@ The First Responder Kit runs on:
 
 * SQL Server 2012, 2014, 2016, 2017, 2019 on Windows - fully supported.
 * SQL Server 2017, 2019 on Linux - yes, fully supported except sp_AllNightLog and sp_DatabaseRestore, which require xp_cmdshell, which Microsoft doesn't provide on Linux.
-* SQL Server 2008, 200R2 - not officially supported since it's out of Microsoft support, but we try not to make changes that would break functionality here.
+* SQL Server 2008, 2008R2 - not officially supported since it's out of Microsoft support, but we try not to make changes that would break functionality here.
 * SQL Server 2000, 2005 - not supported at all.
 * Amazon RDS SQL Server - fully supported.
 * Azure SQL DB - not supported. Some of the procedures work, but some don't, and Microsoft has a tendency to change DMVs in Azure without warning, so we don't put any effort into supporting it. If it works, great! If not, any changes to make it work would be on you. [See the contributing.md file](CONTRIBUTING.md) for how to do that.
@@ -72,9 +74,7 @@ When you have a question about what the scripts found, first make sure you read 
 
 
 ## sp_Blitz: Overall Health Check
-Run sp_Blitz daily or weekly for an overall health check. Just run it from SQL Server Management Studio, and you'll get a prioritized list of issues on your server right now:
-
-![sp_Blitz](http://u.brentozar.com/github-images/sp_Blitz.png)
+Run sp_Blitz daily or weekly for an overall health check. Just run it from SQL Server Management Studio, and you'll get a prioritized list of issues on your server right now.
 
 Output columns include:
 
@@ -105,8 +105,8 @@ In addition to the [parameters common to many of the stored procedures](#paramet
 
 #### Writing sp_Blitz Output to a Table
 
-```SQL
-sp_Blitz @OutputDatabaseName = 'DBAtools', @OutputSchemaName = 'dbo', @OutputTableName = 'BlitzResults';
+```tsql
+EXEC sp_Blitz @OutputDatabaseName = 'DBAtools', @OutputSchemaName = 'dbo', @OutputTableName = 'BlitzResults';
 ```
 
 Checks for the existence of a table DBAtools.dbo.BlitzResults, creates it if necessary, then adds the output of sp_Blitz into this table. This table is designed to support multiple outputs from multiple servers, so you can track your server's configuration history over time.
@@ -115,16 +115,16 @@ Checks for the existence of a table DBAtools.dbo.BlitzResults, creates it if nec
 
 #### Skipping Checks or Databases
 
-```SQL
+```tsql
 CREATE TABLE dbo.BlitzChecksToSkip (
-ServerName NVARCHAR(128),
-DatabaseName NVARCHAR(128),
-CheckID INT
+    ServerName NVARCHAR(128),
+    DatabaseName NVARCHAR(128),
+    CheckID INT
 );
 GO
 INSERT INTO dbo.BlitzChecksToSkip (ServerName, DatabaseName, CheckID)
 VALUES (NULL, 'SalesDB', 50)
-sp_Blitz @SkipChecksDatabase = 'DBAtools', @SkipChecksSchema = 'dbo', @SkipChecksTable = 'BlitzChecksToSkip'
+sp_Blitz @SkipChecksDatabase = 'DBAtools', @SkipChecksSchema = 'dbo', @SkipChecksTable = 'BlitzChecksToSkip';
 ```
 
 Checks for the existence of a table named Fred - just kidding, named DBAtools.dbo.BlitzChecksToSkip. The table needs at least the columns shown above (ServerName, DatabaseName, and CheckID). For each row:
@@ -178,7 +178,7 @@ Other common parameters include:
 * @Top = 10 - by default, you get 10 plans, but you can ask for more. Just know that the more you get, the slower it goes.
 * @ExportToExcel = 1 - turn this on, and it doesn't return XML fields that would hinder you from copy/pasting the data into Excel.
 * @ExpertMode = 1 - turn this on, and you get more columns with more data. Doesn't take longer to run though.
-* @IgnoreSystemDBs = 0 - if you want to show queries in master/model/msdb. By default we hide these.
+* @IgnoreSystemDBs = 0 - if you want to show queries in master/model/msdb. By default we hide these. Additionally hides queries from databases named `dbadmin`, `dbmaintenance`, and `dbatools`.
 * @MinimumExecutionCount = 0 - in servers like data warehouses where lots of queries only run a few times, you can set a floor number for examination.
 
 [*Back to top*](#header1)
@@ -192,6 +192,10 @@ In addition to the [parameters common to many of the stored procedures](#paramet
 * @OnlySqlHandles, @IgnoreSqlHandles - just like the above two params
 * @DatabaseName - if you only want to analyze plans in a single database. However, keep in mind that this is only the database context. A single query that runs in Database1 can join across objects in Database2 and Database3, but we can only know that it ran in Database1.
 * @SlowlySearchPlansFor - lets you search for strings, but will not find all results due to a [bug in the way SQL Server removes spaces from XML.](https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/issues/2202) If your search string includes spaces, SQL Server may remove those before the search runs, unfortunately.
+
+### sp_BlitzCache Known Issues
+
+* We skip databases in an Availability Group that require read-only intent. If you wanted to contribute code to enable read-only intent databases to work, look for this phrase in the code: "Checking for Read intent databases to exclude".
 
 [*Back to top*](#header1)
 
@@ -215,7 +219,7 @@ Common sp_BlitzFirst parameters include:
 
 ### Logging sp_BlitzFirst to Tables
 
-You can log sp_BlitzFirst performance data to tables and then analyze the results with the Power BI dashboard. To do it, schedule an Agent job to run sp_BlitzFirst every 15 minutes with these parameters populated:
+You can log sp_BlitzFirst performance data to tables by scheduling an Agent job to run sp_BlitzFirst every 15 minutes with these parameters populated:
 
 * @OutputDatabaseName = typically 'DBAtools'
 * @OutputSchemaName = 'dbo'
@@ -228,16 +232,14 @@ You can log sp_BlitzFirst performance data to tables and then analyze the result
 
 All of the above OutputTableName parameters are optional: if you don't want to collect all of the stats, you don't have to. Keep in mind that the sp_BlitzCache results will get large, fast, because each execution plan is megabytes in size.
 
-Then fire up the [First Responder Kit Power BI dashboard.](https://www.brentozar.com/first-aid/first-responder-kit-power-bi-dashboard/)
-
 ### Logging Performance Tuning Activities
 
-On the Power BI Dashboard, you can show lines for your own activities like tuning queries, adding indexes, or changing configuration settings. To do it, run sp_BlitzFirst with these parameters:
+You can also log your own activities like tuning queries, adding indexes, or changing configuration settings. To do it, run sp_BlitzFirst with these parameters:
 
 * @OutputDatabaseName = typically 'DBAtools'
 * @OutputSchemaName = 'dbo'
 * @OutputTableName = 'BlitzFirst' - the quick diagnosis result set goes here
-* @LogMessage = 'Whatever you wanna show in the Power BI dashboard'
+* @LogMessage = 'Whatever you wanna show in your monitoring tool'
 
 Optionally, you can also pass in:
 
@@ -364,6 +366,88 @@ It's designed for query tuners, so it includes things like memory grants, degree
 [*Back to top*](#header1)
 
 
+## sp_BlitzAnalysis: Query sp_BlitzFirst output tables
+
+Retrieves data from the output tables where you are storing your sp_BlitzFirst output.
+
+Parameters include:
+
+* @StartDate: When you want to start seeing data from , NULL will set @StartDate to 1 hour ago.
+* @EndDate: When you want to see data up to, NULL will get an hour of data since @StartDate.
+* @Databasename: Filter results by database name where possible, Default: NULL which shows all.
+* @Servername: Filter results by server name, Default: @@SERVERNAME.
+* @OutputDatabaseName: Specify the database name where where we can find your logged sp_BlitzFirst Output table data
+* @OutputSchemaName: Schema which the sp_BlitzFirst Output tables belong to
+* @OutputTableNameBlitzFirst: Table name where you are storing sp_BlitzFirst @OutputTableNameBlitzFirst output, we default to BlitzFirst - you can Set to NULL to skip lookups against this table  
+* @OutputTableNameFileStats: Table name where you are storing sp_BlitzFirst @OutputTableNameFileStats output, we default to BlitzFirst_FileStats - you can Set to NULL to skip lookups against this table.  
+* @OutputTableNamePerfmonStats: Table name where you are storing sp_BlitzFirst @OutputTableNamePerfmonStats output, we default to BlitzFirst_PerfmonStats - you can Set to NULL to skip lookups against this table.	
+* @OutputTableNameWaitStats: Table name where you are storing sp_BlitzFirst @OutputTableNameWaitStats output, we default to BlitzFirst_WaitStats - you can Set to NULL to skip lookups against this table.
+* @OutputTableNameBlitzCache: Table name where you are storing sp_BlitzFirst @OutputTableNameBlitzCache output, we default to BlitzCache - you can Set to NULL to skip lookups against this table.
+* @OutputTableNameBlitzWho: Table name where you are storing sp_BlitzFirst @OutputTableNameBlitzWho output, we default to BlitzWho - you can Set to NULL to skip lookups against this table.	
+* @MaxBlitzFirstPriority: Max priority to include in the results from your BlitzFirst table, Default: 249.
+* @BlitzCacheSortorder: Controls the results returned from your BlitzCache table, you will get a TOP 5 per sort order per CheckDate, Default: 'cpu' Accepted values 'all' 'cpu' 'reads' 'writes' 'duration' 'executions' 'memory grant' 'spills'.
+* @WaitStatsTop: Controls the Top X waits per CheckDate from your  wait stats table, Default: 10.
+* @ReadLatencyThreshold: Sets the threshold in ms to compare against io_stall_read_average_ms in your filestats table, Default: 100.
+* @WriteLatencyThreshold: Sets the threshold in ms to compare against io_stall_write_average_ms in your filestats table, Default: 100.
+* @BringThePain: If you are getting more than 4 hours of data from your BlitzCache table with @BlitzCacheSortorder set to 'all' you will need to set BringThePain to 1.
+* @Maxdop: Control the degree of parallelism that the queries within this proc can use if they want to, Default = 1.
+* @Debug: Show sp_BlitzAnalysis SQL commands in the messages tab as they execute.
+
+Example calls: 
+
+Get information for the last hour from all sp_BlitzFirst output tables
+
+```tsql
+EXEC sp_BlitzAnalysis 
+	@StartDate = NULL,
+	@EndDate = NULL,
+	@OutputDatabaseName = 'DBAtools',
+	@OutputSchemaName = 'dbo',
+	@OutputTableNameFileStats = N'BlitzFirst_FileStats',		
+	@OutputTableNamePerfmonStats  = N'BlitzFirst_PerfmonStats',		
+	@OutputTableNameWaitStats = N'BlitzFirst_WaitStats',		 
+	@OutputTableNameBlitzCache = N'BlitzCache',		 
+	@OutputTableNameBlitzWho = N'BlitzWho';
+```
+
+Exclude specific tables e.g lets exclude PerfmonStats by setting to NULL, no lookup will occur against the table and a skipped message will appear in the resultset
+
+```tsql
+EXEC sp_BlitzAnalysis 
+	@StartDate = NULL,
+	@EndDate = NULL,
+	@OutputDatabaseName = 'DBAtools',
+	@OutputSchemaName = 'Blitz',
+	@OutputTableNameFileStats = N'BlitzFirst_FileStats',		
+	@OutputTableNamePerfmonStats  = NULL,		
+	@OutputTableNameWaitStats = N'BlitzFirst_WaitStats',		 
+	@OutputTableNameBlitzCache = N'BlitzCache',		 
+	@OutputTableNameBlitzWho = N'BlitzWho';
+```
+
+Known issues: 
+We are likely to be hitting some big tables here and some of these queries will require scans of the clustered indexes as there are no nonclustered indexes to cover the queries by default, keep this in mind if you are planning on running this in a production environment!
+
+I have noticed that the Perfmon query can ask for a big memory grant so be mindful when including this table with large volumes of data:
+
+```tsql
+SELECT 
+      [ServerName]
+    , [CheckDate]
+    , [counter_name]
+    , [object_name]
+    , [instance_name]
+    , [cntr_value]
+FROM [dbo].[BlitzFirst_PerfmonStats_Actuals]
+WHERE CheckDate BETWEEN @FromDate AND @ToDate
+ORDER BY 
+      [CheckDate] ASC
+    , [counter_name] ASC;
+```
+
+[*Back to top*](#header1)
+
+
 ## sp_BlitzBackups: How Much Data Could You Lose
 
 Checks your backups and reports estimated RPO and RTO based on historical data in msdb, or a centralized location for [msdb].dbo.backupset.
@@ -381,11 +465,11 @@ Parameters include:
 
 An example run of sp_BlitzBackups to push data looks like this:
 
-```
-EXEC sp_BlitzBackups    @PushBackupHistoryToListener = 1, -- Turn it on!
-                        @WriteBackupsToListenerName = 'AG_LISTENER_NAME', -- Name of AG Listener and Linked Server 
-                        @WriteBackupsToDatabaseName = 'FAKE_MSDB_NAME',  -- Fake MSDB name you want to push to. Remember, can't be real MSDB.
-                        @WriteBackupsLastHours = -24 -- Hours back in time you want to go
+```tsql
+EXEC sp_BlitzBackups @PushBackupHistoryToListener = 1, -- Turn it on!
+                     @WriteBackupsToListenerName = 'AG_LISTENER_NAME', -- Name of AG Listener and Linked Server 
+                     @WriteBackupsToDatabaseName = 'FAKE_MSDB_NAME',  -- Fake MSDB name you want to push to. Remember, can't be real MSDB.
+                     @WriteBackupsLastHours = -24 -- Hours back in time you want to go
 ```
 
 In an effort to not clog your servers up, we've taken some care in batching things as we move data. Inspired by [Michael J. Swart's Take Care When Scripting Batches](http://michaeljswart.com/2014/09/take-care-when-scripting-batches/), we only move data in 10 minute intervals.
@@ -411,7 +495,7 @@ For more information about how this works, see [sp_AllNightLog documentation.](h
 Known issues:
 
 * The msdbCentral database name is hard-coded.
-* sp_AllNightLog depends on Ola Hallengren's DatabaseBackup, which must be installed separately. (We're not checking for it right now.)
+* sp_AllNightLog depends on Ola Hallengren's DatabaseBackup, which must be installed separately. (We expect it to be installed in the same database as the SQL Server First Responder Kit.)
 
 
 [*Back to top*](#header1)
@@ -425,7 +509,7 @@ Parameters include:
 
 * @Database - the database's name, like LogShipMe
 * @RestoreDatabaseName
-* @BackupPathFull - typically a UNC path like '\\FILESERVER\BACKUPS\SQL2016PROD1A\LogShipMe\FULL\' that points to where the full backups are stored. Note that if the path doesn't exist, we don't create it, and the query might take 30+ seconds if you specify an invalid server name.
+* @BackupPathFull - typically a UNC path like '\\\\FILESERVER\BACKUPS\SQL2016PROD1A\LogShipMe\FULL\' that points to where the full backups are stored. Note that if the path doesn't exist, we don't create it, and the query might take 30+ seconds if you specify an invalid server name.
 * @BackupPathDiff, @BackupPathLog - as with the Full, this should be set to the exact path where the differentials and logs are stored. We don't append anything to these parameters.
 * @MoveFiles, @MoveDataDrive, @MoveLogDrive - if you want to restore to somewhere other than your default database locations.
 * @RunCheckDB - default 0. When set to 1, we run Ola Hallengren's DatabaseIntegrityCheck stored procedure on this database, and log the results to table. We use that stored proc's default parameters, nothing fancy.
@@ -453,14 +537,15 @@ For information about how this works, see [Tara Kizer's white paper on Log Shipp
 
 To check versions of any of the stored procedures, use their output parameters for Version and VersionDate like this:
 
-```
+```tsql
 DECLARE @VersionOutput VARCHAR(30), @VersionDateOutput DATETIME;
 EXEC sp_Blitz 
-	@Version = @VersionOutput OUTPUT, 
-	@VersionDate = @VersionDateOutput OUTPUT,
-	@VersionCheckMode = 1;
-SELECT @VersionOutput AS Version, 
-	@VersionDateOutput AS VersionDate;
+    @Version = @VersionOutput OUTPUT, 
+    @VersionDate = @VersionDateOutput OUTPUT,
+    @VersionCheckMode = 1;
+SELECT
+    @VersionOutput AS Version, 
+    @VersionDateOutput AS VersionDate;
 ```
 
 [*Back to top*](#header1)
@@ -477,8 +562,10 @@ SELECT @VersionOutput AS Version,
 [stars badge]:https://img.shields.io/github/stars/BrentOzarULTD/SQL-Server-First-Responder-Kit.svg
 [forks badge]:https://img.shields.io/github/forks/BrentOzarULTD/SQL-Server-First-Responder-Kit.svg
 [issues badge]:https://img.shields.io/github/issues/BrentOzarULTD/SQL-Server-First-Responder-Kit.svg
+[contributors_badge]:https://img.shields.io/github/contributors/BrentOzarULTD/SQL-Server-First-Responder-Kit.svg
 
 [licence]:https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/blob/master/LICENSE.md
 [stars]:https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/stargazers
 [forks]:https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/network
 [issues]:https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/issues
+[contributors]:https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/graphs/contributors
